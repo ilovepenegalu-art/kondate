@@ -163,6 +163,7 @@
   .tag.part { background: var(--warn-bg); color: var(--warn); }
   .tag.buy { background: var(--buy-bg); color: var(--buy); }
   .tag.seasoning { background: var(--chip); color: var(--muted); }
+  .tag.season { background: var(--chip); color: var(--accent); margin-left: 6px; }
   details { margin: 0 0 10px; }
   summary { cursor: pointer; font-size: .9rem; font-weight: 600; }
   details ol, details ul { margin: 8px 0 0; padding-left: 1.4em; font-size: .92rem; }
@@ -219,6 +220,10 @@
     <label class="field">
       <span>冷蔵庫の残り物</span>
       <textarea id="leftovers" rows="6" placeholder="例）鶏むね肉 300g、キャベツ半玉、卵4個、にんじん1本、豆腐1丁"></textarea>
+    </label>
+    <label class="check">
+      <input type="checkbox" id="seasonal">
+      <span>旬の食材も使う（いまは<span id="seasonMonth"></span>）。残り物が空なら、旬の食材だけで考えます</span>
     </label>
     <div class="row">
       <label class="field">
@@ -364,6 +369,8 @@ function readInput() {
     style: document.querySelector('input[name="style"]:checked')?.value || "主菜＋副菜",
     request: $("#request").value.trim(),
     assumeSeasoning: $("#assumeSeasoning").checked,
+    seasonal: $("#seasonal").checked,
+    month: new Date().getMonth() + 1, // 旬を判断する月（端末の日付）
   };
 }
 
@@ -377,6 +384,7 @@ function restoreInput() {
   if (radio) radio.checked = true;
   $("#request").value = saved.request || "";
   $("#assumeSeasoning").checked = saved.assumeSeasoning !== false;
+  $("#seasonal").checked = saved.seasonal === true;
 }
 
 $("#tab-input").addEventListener("input", () => store.set(KEYS.input, readInput()));
@@ -385,7 +393,7 @@ $("#tab-input").addEventListener("change", () => store.set(KEYS.input, readInput
 // =====================================================================
 // Gemini の呼び出し
 // =====================================================================
-const SYSTEM_PROMPT = `あなたは日本の家庭料理にくわしい献立アシスタントです。利用者が伝えた「冷蔵庫の残り物」をできるだけ使い切る夕食の献立を考えます。
+const SYSTEM_PROMPT = `あなたは日本の家庭料理にくわしい献立アシスタントです。利用者が伝えた「冷蔵庫の残り物」をできるだけ使い切り、指定があれば旬の食材も取り入れた夕食の献立を考えます。
 
 進め方:
 1. 残り物と条件から、献立（料理の組み合わせ）を考える。複数日のときは、傷みやすい食材を早い日に使い、同じ味付け・調理法が続かないようにする。
@@ -399,8 +407,10 @@ const SYSTEM_PROMPT = `あなたは日本の家庭料理にくわしい献立ア
 - stock: 残り物に同じ食材（言い換え・表記ゆれを含む）があり量も足りるなら「足りる」、あるが足りないなら「一部ある」、なければ「ない」。残り物に量が書かれていなければ、足りるものとして扱う。
 - buy_amount: 買い足す量。「一部ある」なら不足分、「ない」なら必要な量。「足りる」なら空文字。
 - is_seasoning: 塩・砂糖・しょうゆ・みそ・酒・みりん・酢・油・こしょう・だしの素・コンソメ・片栗粉・小麦粉などの基本調味料・粉類なら true。
+- is_seasonal: 指定された月に日本で旬を迎える食材（野菜・魚介・果物・きのこなど）なら true。調味料は false。
+- 旬の食材を使う指定があるときは、1日につき少なくとも1品は、旬の食材を主役にした料理にする。旬の食材は買い足しになってよい。残り物が「なし」のときは、旬の食材を中心に考える。
 - 米・パン・麺などの主食は、要望がなければ献立に入れない。
-- summary は、どんな料理か・残り物の何を使うかを1文で。note には、使い切れなかった残り物や、買い物・保存の注意があれば1〜2文で書く（なければ空文字）。`;
+- summary は、どんな料理か・残り物や旬の食材の何を使うかを1文で。note には、使い切れなかった残り物や、買い物・保存の注意があれば1〜2文で書く（なければ空文字）。`;
 
 const ingredientSchema = {
   type: "object",
@@ -410,8 +420,9 @@ const ingredientSchema = {
     stock: { type: "string", enum: STOCKS, description: "残り物で足りるか" },
     buy_amount: { type: "string", description: "買い足す量。stock が「足りる」なら空文字" },
     is_seasoning: { type: "boolean", description: "基本調味料・粉類なら true" },
+    is_seasonal: { type: "boolean", description: "指定された月に旬の食材なら true" },
   },
-  required: ["name", "amount", "stock", "buy_amount", "is_seasoning"],
+  required: ["name", "amount", "stock", "buy_amount", "is_seasoning", "is_seasonal"],
   additionalProperties: false,
 };
 
@@ -570,6 +581,7 @@ function cleanDish(d) {
         stock: STOCKS.includes(i.stock) ? i.stock : "ない",
         buy_amount: str(i.buy_amount),
         is_seasoning: i.is_seasoning === true,
+        is_seasonal: i.is_seasonal === true,
       })),
     steps: Array.isArray(d.steps) ? d.steps.map(str).filter(Boolean) : [],
   };
@@ -589,16 +601,20 @@ function cleanMenu(m) {
 
 // ---- プロンプト ----
 function conditionsText(input) {
+  const month = input.month || new Date().getMonth() + 1;
   return [
     `- 人数: ${input.people}人分`,
     `- 日数: ${input.days}日分（1日＝夕食1回）`,
     `- 1日の品数: ${input.style}`,
+    input.seasonal ? `- 旬の食材: 使う（いまは${month}月。この時期に旬の食材を取り入れる）` : "- 旬の食材: 指定なし",
     `- 要望: ${input.request || "特になし"}`,
   ].join("\n");
 }
 
+const leftoversText = (input) => input.leftovers || "なし（旬の食材を中心に考える）";
+
 function menuPrompt(input) {
-  return `残り物:\n${input.leftovers}\n\n条件:\n${conditionsText(input)}\n\n献立を考えて、指定のJSONで返してください。`;
+  return `残り物:\n${leftoversText(input)}\n\n条件:\n${conditionsText(input)}\n\n献立を考えて、指定のJSONで返してください。`;
 }
 
 function replacePrompt(result, di, i) {
@@ -620,7 +636,7 @@ function replacePrompt(result, di, i) {
 - 差し替え後の1品だけを、指定のJSONで返す
 
 残り物:
-${result.input.leftovers}
+${leftoversText(result.input)}
 
 条件:
 ${conditionsText(result.input)}
@@ -640,9 +656,9 @@ function startBusy(kind, extra = {}) {
 async function generateMenu() {
   if (state.busy) return;
   const input = readInput();
-  if (!input.leftovers) {
+  if (!input.leftovers && !input.seasonal) {
     $("#leftovers").focus();
-    toast("残り物を入力してください");
+    toast("残り物を入れるか、「旬の食材も使う」にチェックを入れてください");
     return;
   }
   if (!store.get(KEYS.apiKey, "")) {
@@ -704,7 +720,7 @@ function renderBusy() {
     "div",
     { class: "busy" },
     el("div", { class: "busy-head" }, el("span", { class: "spinner" }), `${label}…`, el("span", { class: "mins", id: "elapsed" }, `${seconds}秒`)),
-    el("p", { class: "hint" }, "残り物に合う料理と分量を考えています。"),
+    el("p", { class: "hint" }, "料理と分量を考えています。"),
     el("button", { type: "button", class: "secondary", onclick: () => b.controller.abort() }, "中止"),
   );
 }
@@ -740,7 +756,13 @@ function renderDish(dish, di, i) {
       "ul",
       { class: "ings" },
       dish.ingredients.map((ing) =>
-        el("li", { class: "ing" }, el("span", { class: "ing-name" }, ing.name), el("span", { class: "ing-amt" }, ing.amount), stockTag(ing)),
+        el(
+          "li",
+          { class: "ing" },
+          el("span", { class: "ing-name" }, ing.name, ing.is_seasonal ? el("span", { class: "tag season" }, "旬") : null),
+          el("span", { class: "ing-amt" }, ing.amount),
+          stockTag(ing),
+        ),
       ),
     ),
     dish.steps.length
@@ -766,7 +788,7 @@ function renderMenu() {
     root.append(el("p", { class: "empty" }, "まだ献立がありません。「1. 残り物」から作ってください。"));
     return;
   }
-  root.append(el("p", { class: "meta" }, `${r.input.people}人分・${r.input.days}日分・${r.input.style}　${formatTime(r.createdAt)} 作成`));
+  root.append(el("p", { class: "meta" }, `${r.input.people}人分・${r.input.days}日分・${r.input.style}${r.input.seasonal ? "・旬の食材" : ""}　${formatTime(r.createdAt)} 作成`));
   if (r.note) root.append(el("p", { class: "note" }, r.note));
   r.days.forEach((day, di) => {
     root.append(
@@ -833,9 +855,10 @@ function shoppingItems() {
         const key = itemKey(ing.name);
         let item = map.get(key);
         if (!item) {
-          item = { key, name: ing.name, amounts: [], dishes: [], seasoning: ing.is_seasoning };
+          item = { key, name: ing.name, amounts: [], dishes: [], seasoning: ing.is_seasoning, seasonal: false };
           map.set(key, item);
         }
+        item.seasonal ||= ing.is_seasonal;
         item.amounts.push(ing.buy_amount || ing.amount);
         if (!item.dishes.includes(dish.name)) item.dishes.push(dish.name);
       }
@@ -903,7 +926,7 @@ function renderShop() {
                 { class: "shop-main" },
                 el("span", { class: "shop-name" }, item.name),
                 item.total ? el("span", { class: "shop-amt" }, item.total) : null,
-                el("span", { class: "shop-sub" }, `${item.seasoning ? "調味料・" : ""}${item.dishes.join("、")}`),
+                el("span", { class: "shop-sub" }, `${item.seasoning ? "調味料・" : ""}${item.seasonal ? "旬・" : ""}${item.dishes.join("、")}`),
               ),
             ),
           ),
@@ -1021,6 +1044,7 @@ function loadResult() {
 }
 
 state.result = loadResult();
+$("#seasonMonth").textContent = `${new Date().getMonth() + 1}月`;
 restoreInput();
 renderAll();
 </script>
