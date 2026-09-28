@@ -1,0 +1,1096 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>残り物献立</title>
+<meta name="description" content="冷蔵庫の残り物から献立と買い物リストを作る個人用アプリ">
+<meta name="theme-color" content="#c8553d">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="残り物献立">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<style>
+  :root {
+    --bg: #faf7f2;
+    --surface: #ffffff;
+    --text: #2b2622;
+    --muted: #6f665e;
+    --border: #e7dfd4;
+    --accent: #c8553d;
+    --accent-text: #ffffff;
+    --chip: #f3ece2;
+    --ok: #2f7d4f;
+    --ok-bg: #e5f3ea;
+    --warn: #99620f;
+    --warn-bg: #fbefd9;
+    --buy: #b03a2e;
+    --buy-bg: #fbe4e0;
+    --error-bg: #fdeceb;
+    --shadow: 0 1px 2px rgba(60, 40, 20, .06), 0 2px 8px rgba(60, 40, 20, .05);
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #1c1a18;
+      --surface: #262320;
+      --text: #eee8e1;
+      --muted: #a89f95;
+      --border: #3a3531;
+      --accent: #e07a5f;
+      --accent-text: #1c1a18;
+      --chip: #302c28;
+      --ok: #7fcf9c;
+      --ok-bg: #203328;
+      --warn: #e8bd6a;
+      --warn-bg: #3a2f1c;
+      --buy: #f19a8c;
+      --buy-bg: #3d2420;
+      --error-bg: #3d2420;
+      --shadow: none;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #1c1a18; --surface: #262320; --text: #eee8e1; --muted: #a89f95; --border: #3a3531;
+    --accent: #e07a5f; --accent-text: #1c1a18; --chip: #302c28; --ok: #7fcf9c; --ok-bg: #203328;
+    --warn: #e8bd6a; --warn-bg: #3a2f1c; --buy: #f19a8c; --buy-bg: #3d2420; --error-bg: #3d2420;
+    --shadow: none; color-scheme: dark;
+  }
+
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: system-ui, -apple-system, "Hiragino Sans", "Yu Gothic UI", "Meiryo", sans-serif;
+    font-size: 16px;
+    line-height: 1.6;
+  }
+  button, input, select, textarea { font: inherit; color: inherit; }
+
+  .top {
+    position: sticky; top: 0; z-index: 5;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: calc(env(safe-area-inset-top) + 10px) 16px 0;
+    background: var(--bg);
+  }
+  .top h1 { margin: 0; font-size: 1.15rem; letter-spacing: .02em; }
+  .icon-btn {
+    width: 40px; height: 40px; border-radius: 10px;
+    border: 1px solid var(--border); background: var(--surface); cursor: pointer; font-size: 1.1rem;
+  }
+  .steps {
+    position: sticky; top: calc(env(safe-area-inset-top) + 50px); z-index: 4;
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px;
+    padding: 10px 16px; background: var(--bg); border-bottom: 1px solid var(--border);
+  }
+  .steps button {
+    padding: 8px 4px; border-radius: 10px; border: 1px solid var(--border);
+    background: var(--surface); color: var(--muted); font-size: .88rem; cursor: pointer; white-space: nowrap;
+  }
+  .steps button.active { background: var(--accent); border-color: var(--accent); color: var(--accent-text); font-weight: 600; }
+
+  main { max-width: 720px; margin: 0 auto; padding: 16px 16px calc(env(safe-area-inset-bottom) + 40px); }
+  .panel[hidden] { display: none; }
+
+  .field { display: block; margin: 0 0 16px; border: 0; padding: 0; }
+  .field > span, .field > legend { display: block; font-weight: 600; font-size: .92rem; margin-bottom: 6px; }
+  textarea, input[type="text"], select {
+    width: 100%; padding: 10px 12px; border-radius: 10px;
+    border: 1px solid var(--border); background: var(--surface);
+  }
+  textarea { resize: vertical; min-height: 120px; }
+  textarea:focus, input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .choices { display: flex; flex-wrap: wrap; gap: 8px; }
+  .choices label {
+    display: inline-flex; align-items: center; gap: 6px; padding: 7px 12px;
+    border: 1px solid var(--border); border-radius: 999px; background: var(--surface); cursor: pointer; font-size: .92rem;
+  }
+  .choices input { accent-color: var(--accent); margin: 0; }
+  .check { display: flex; gap: 8px; align-items: flex-start; margin: 0 0 18px; font-size: .92rem; cursor: pointer; }
+  .check input { accent-color: var(--accent); margin-top: 5px; flex: none; }
+
+  .primary, .secondary {
+    display: block; width: 100%; padding: 13px 16px; border-radius: 12px; cursor: pointer;
+    font-weight: 700; font-size: 1rem;
+  }
+  .primary { background: var(--accent); color: var(--accent-text); border: 0; }
+  .secondary { background: var(--surface); color: var(--text); border: 1px solid var(--border); }
+  .primary:disabled, .secondary:disabled { opacity: .5; cursor: default; }
+  .btn-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 12px; }
+  .hint, .meta { color: var(--muted); font-size: .85rem; }
+  .hint { margin: 10px 0 0; }
+  .meta { margin: 0 0 12px; }
+  .empty { color: var(--muted); text-align: center; padding: 40px 0; }
+  .note { background: var(--chip); border-radius: 10px; padding: 10px 12px; font-size: .9rem; margin: 0 0 14px; }
+  .error { background: var(--error-bg); color: var(--buy); border-radius: 10px; padding: 10px 12px; margin: 0 0 14px; font-size: .92rem; }
+
+  .busy {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 14px;
+    padding: 16px; margin: 0 0 16px; box-shadow: var(--shadow);
+  }
+  .busy-head { display: flex; align-items: center; gap: 10px; font-weight: 600; }
+  .spinner {
+    width: 18px; height: 18px; border-radius: 50%; flex: none;
+    border: 3px solid var(--border); border-top-color: var(--accent); animation: spin .9s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 3s; } }
+  .busy .hint { margin: 8px 0 12px; }
+  .busy .secondary { padding: 8px; font-size: .9rem; font-weight: 600; }
+
+  .day { margin: 0 0 22px; }
+  .day h2 { font-size: 1.05rem; margin: 0 0 10px; }
+  .dish {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 14px;
+    padding: 14px; margin: 0 0 12px; box-shadow: var(--shadow);
+  }
+  .dish.replacing { opacity: .55; }
+  .dish-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+  .role { font-size: .75rem; font-weight: 700; padding: 2px 8px; border-radius: 999px; background: var(--chip); color: var(--muted); }
+  .dish h3 { margin: 0; font-size: 1.05rem; }
+  .mins { color: var(--muted); font-size: .82rem; }
+  .summary { margin: 6px 0 10px; color: var(--muted); font-size: .9rem; }
+  .ings { list-style: none; margin: 0 0 10px; padding: 0; display: grid; gap: 4px; }
+  .ing { display: flex; align-items: baseline; gap: 8px; font-size: .92rem; }
+  .ing-name { flex: 1; min-width: 0; }
+  .ing-amt { color: var(--muted); white-space: nowrap; }
+  .tag { font-size: .72rem; font-weight: 700; padding: 1px 7px; border-radius: 6px; white-space: nowrap; }
+  .tag.have { background: var(--ok-bg); color: var(--ok); }
+  .tag.part { background: var(--warn-bg); color: var(--warn); }
+  .tag.buy { background: var(--buy-bg); color: var(--buy); }
+  .tag.seasoning { background: var(--chip); color: var(--muted); }
+  details { margin: 0 0 10px; }
+  summary { cursor: pointer; font-size: .9rem; font-weight: 600; }
+  details ol, details ul { margin: 8px 0 0; padding-left: 1.4em; font-size: .92rem; }
+  .dish-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+  .source { font-size: .85rem; color: var(--accent); word-break: break-all; }
+  .small-btn {
+    padding: 6px 12px; border-radius: 8px; border: 1px solid var(--border);
+    background: var(--surface); cursor: pointer; font-size: .85rem; white-space: nowrap;
+  }
+  .small-btn:disabled { opacity: .5; cursor: default; }
+  .grounding { margin: 0 0 18px; }
+  .grounding li { margin: 2px 0; }
+  .grounding a { color: var(--accent); word-break: break-all; }
+  .suggest { display: block; width: 100%; height: 72px; border: 0; margin: 8px 0 0; background: transparent; }
+
+  .shop-list { list-style: none; margin: 0 0 16px; padding: 0; background: var(--surface); border: 1px solid var(--border); border-radius: 14px; overflow: hidden; }
+  .shop-list li + li { border-top: 1px solid var(--border); }
+  .shop-list label { display: flex; gap: 10px; align-items: flex-start; padding: 11px 14px; cursor: pointer; }
+  .shop-list input { accent-color: var(--accent); width: 18px; height: 18px; margin-top: 3px; flex: none; }
+  .shop-main { flex: 1; min-width: 0; }
+  .shop-name { font-weight: 600; }
+  .shop-amt { margin-left: 6px; }
+  .shop-sub { display: block; color: var(--muted); font-size: .8rem; }
+  .shop-list li.off .shop-name, .shop-list li.off .shop-amt { color: var(--muted); text-decoration: line-through; }
+  .section-title { font-size: .95rem; margin: 18px 0 8px; }
+  #shareText { min-height: 160px; font-size: .92rem; background: var(--surface); }
+
+  dialog {
+    width: min(520px, calc(100vw - 32px)); border: 1px solid var(--border); border-radius: 16px;
+    background: var(--surface); color: var(--text); padding: 20px;
+  }
+  dialog::backdrop { background: rgba(0, 0, 0, .4); }
+  dialog h2 { margin: 0 0 12px; font-size: 1.1rem; }
+  dialog p { font-size: .88rem; color: var(--muted); }
+  .key-status { font-size: .85rem; margin: -8px 0 14px; color: var(--muted); }
+
+  .toast {
+    position: fixed; left: 50%; bottom: calc(env(safe-area-inset-bottom) + 24px); transform: translateX(-50%);
+    background: var(--text); color: var(--bg); padding: 8px 16px; border-radius: 999px; font-size: .9rem;
+    opacity: 0; pointer-events: none; transition: opacity .2s;
+  }
+  .toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+<header class="top">
+  <h1>残り物献立</h1>
+  <button id="openSettings" class="icon-btn" type="button" aria-label="設定">⚙</button>
+</header>
+<nav class="steps" aria-label="画面">
+  <button type="button" data-tab="input" class="active">1. 残り物</button>
+  <button type="button" data-tab="menu">2. 献立</button>
+  <button type="button" data-tab="shop">3. 買い物リスト</button>
+</nav>
+
+<main>
+  <section id="tab-input" class="panel">
+    <label class="field">
+      <span>冷蔵庫の残り物</span>
+      <textarea id="leftovers" rows="6" placeholder="例）鶏むね肉 300g、キャベツ半玉、卵4個、にんじん1本、豆腐1丁"></textarea>
+    </label>
+    <div class="row">
+      <label class="field">
+        <span>人数</span>
+        <select id="people">
+          <option value="1">1人分</option>
+          <option value="2" selected>2人分</option>
+          <option value="3">3人分</option>
+          <option value="4">4人分</option>
+          <option value="5">5人分</option>
+          <option value="6">6人分</option>
+        </select>
+      </label>
+      <label class="field">
+        <span>日数（夕食）</span>
+        <select id="days">
+          <option value="1" selected>1日分</option>
+          <option value="2">2日分</option>
+          <option value="3">3日分</option>
+          <option value="4">4日分</option>
+          <option value="5">5日分</option>
+        </select>
+      </label>
+    </div>
+    <fieldset class="field">
+      <legend>1日の品数</legend>
+      <div class="choices">
+        <label><input type="radio" name="style" value="主菜のみ"> 主菜のみ</label>
+        <label><input type="radio" name="style" value="主菜＋副菜" checked> 主菜＋副菜</label>
+        <label><input type="radio" name="style" value="主菜＋副菜＋汁物"> 主菜＋副菜＋汁物</label>
+      </div>
+    </fieldset>
+    <label class="field">
+      <span>ひとこと要望（任意）</span>
+      <input type="text" id="request" placeholder="例）平日なので20分以内、辛くない味で">
+    </label>
+    <label class="check">
+      <input type="checkbox" id="assumeSeasoning" checked>
+      <span>基本調味料（塩・しょうゆ・みそ・油など）は家にある前提で、買い物リストから外す</span>
+    </label>
+    <button id="generate" class="primary" type="button">献立を考える</button>
+    <p class="hint">Google検索でレシピを確かめながら考えるので、少し時間がかかります。</p>
+  </section>
+
+  <section id="tab-menu" class="panel" hidden></section>
+  <section id="tab-shop" class="panel" hidden></section>
+</main>
+
+<dialog id="settings">
+  <form method="dialog">
+    <h2>設定</h2>
+    <label class="field">
+      <span>Gemini APIキー</span>
+      <input type="text" id="apiKey" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="AIza...">
+    </label>
+    <p class="key-status" id="keyStatus"></p>
+    <label class="field">
+      <span>モデル</span>
+      <input type="text" id="model" autocomplete="off" autocapitalize="off" spellcheck="false">
+    </label>
+    <p>キーは Google AI Studio（aistudio.google.com）で作れます（無料枠あり）。キーはこの端末のブラウザの中にだけ保存されます。スマホとパソコンでは、それぞれ一度ずつ保存してください。</p>
+    <p>無料枠では、送った内容（残り物や要望）が Google の製品改善に使われ、人が読むことがあります。</p>
+    <div class="btn-row">
+      <button type="button" id="clearKey" class="secondary">キーを消す</button>
+      <button type="button" id="saveKey" class="primary">保存</button>
+    </div>
+    <button type="submit" class="secondary" style="margin-top:10px">閉じる</button>
+  </form>
+</dialog>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script type="module">
+// ---- AIの設定（変えるときはここだけ） ----
+const GEMINI_BASE = "https://generativelanguage.googleapis.com";
+// Google検索と「決まったJSONの形で返す」を同時に使えるモデル。設定画面で変えられる
+const DEFAULT_MODEL = "gemini-3.8-flash";
+
+const ROLES = ["主菜", "副菜", "汁物", "主食"];
+const STOCKS = ["足りる", "一部ある", "ない"];
+
+// ---- ブラウザ内の保存（プライベートモードなどで使えなくても動くようにする） ----
+const KEYS = {
+  apiKey: "kondate.geminiKey",
+  model: "kondate.model",
+  input: "kondate.input",
+  result: "kondate.result",
+  overrides: "kondate.overrides",
+};
+const store = {
+  get(key, fallback) {
+    try {
+      const v = localStorage.getItem(key);
+      return v === null ? fallback : JSON.parse(v);
+    } catch {
+      return fallback;
+    }
+  },
+  set(key, value) {
+    try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* 保存できなくても画面は動かす */ }
+  },
+  remove(key) {
+    try { localStorage.removeItem(key); } catch { /* 同上 */ }
+  },
+};
+
+const state = {
+  result: null, // { input, days: [{ day, dishes }], note, sources, searchHtml, createdAt }。起動時に loadResult() で入れる
+  overrides: store.get(KEYS.overrides, {}), // 買い物リストで手で付け外ししたもの { 食材キー: "include" | "exclude" }
+  busy: null, // { kind: "menu" | "replace", di, i, started, controller }
+  error: null, // { tab, message }
+  tab: "input",
+};
+
+class AppError extends Error {}
+
+// ---- 小さなDOMヘルパー（AIの出力は必ず文字列として入れる） ----
+const $ = (sel) => document.querySelector(sel);
+function el(tag, props = {}, ...children) {
+  const node = document.createElement(tag);
+  for (const [k, v] of Object.entries(props)) {
+    if (v == null || v === false) continue;
+    if (k === "class") node.className = v;
+    else if (k.startsWith("on")) node.addEventListener(k.slice(2), v);
+    else if (typeof v === "boolean") node[k] = v;
+    else node.setAttribute(k, v);
+  }
+  for (const c of children.flat()) {
+    if (c == null || c === false) continue;
+    node.append(c instanceof Node ? c : String(c));
+  }
+  return node;
+}
+
+// =====================================================================
+// 入力画面
+// =====================================================================
+function readInput() {
+  return {
+    leftovers: $("#leftovers").value.trim(),
+    people: Number($("#people").value),
+    days: Number($("#days").value),
+    style: document.querySelector('input[name="style"]:checked')?.value || "主菜＋副菜",
+    request: $("#request").value.trim(),
+    assumeSeasoning: $("#assumeSeasoning").checked,
+  };
+}
+
+function restoreInput() {
+  const saved = store.get(KEYS.input, null);
+  if (!saved) return;
+  $("#leftovers").value = saved.leftovers || "";
+  if (saved.people) $("#people").value = String(saved.people);
+  if (saved.days) $("#days").value = String(saved.days);
+  const radio = document.querySelector(`input[name="style"][value="${saved.style}"]`);
+  if (radio) radio.checked = true;
+  $("#request").value = saved.request || "";
+  $("#assumeSeasoning").checked = saved.assumeSeasoning !== false;
+}
+
+$("#tab-input").addEventListener("input", () => store.set(KEYS.input, readInput()));
+$("#tab-input").addEventListener("change", () => store.set(KEYS.input, readInput()));
+
+// =====================================================================
+// Gemini の呼び出し
+// =====================================================================
+const SYSTEM_PROMPT = `あなたは日本の家庭料理にくわしい献立アシスタントです。利用者が伝えた「冷蔵庫の残り物」をできるだけ使い切る夕食の献立を考えます。
+
+進め方:
+1. 残り物と条件から、献立（料理の組み合わせ）を考える。複数日のときは、傷みやすい食材を早い日に使い、同じ味付け・調理法が続かないようにする。
+2. 各料理について Google 検索で実在するレシピを探し、材料の分量と作り方を確かめる。日本語の家庭料理レシピサイトを優先する。
+3. 分量は、指定された人数分に換算する。
+4. 材料ごとに、残り物で足りるかを判断する。献立全体で同じ食材を使うときは、合計で足りるかを考える。
+5. 結果は、指定されたJSONの形だけで返す。JSON以外の文章は書かない。
+
+守ること:
+- steps（作り方）は、確かめたレシピを参考に、自分の言葉で短くまとめる。1手順1文、3〜6手順。レシピの本文をそのまま写さない。
+- source は、参考にしたレシピの title（レシピ名）と site（サイト名。例: クラシル、白ごはん.com）。URLは書かない。見つからなければ両方とも空文字にする。
+- stock: 残り物に同じ食材（言い換え・表記ゆれを含む）があり量も足りるなら「足りる」、あるが足りないなら「一部ある」、なければ「ない」。残り物に量が書かれていなければ、足りるものとして扱う。
+- buy_amount: 買い足す量。「一部ある」なら不足分、「ない」なら必要な量。「足りる」なら空文字。
+- is_seasoning: 塩・砂糖・しょうゆ・みそ・酒・みりん・酢・油・こしょう・だしの素・コンソメ・片栗粉・小麦粉などの基本調味料・粉類なら true。
+- 米・パン・麺などの主食は、要望がなければ献立に入れない。
+- summary は、どんな料理か・残り物の何を使うかを1文で。note には、使い切れなかった残り物や、買い物・保存の注意があれば1〜2文で書く（なければ空文字）。`;
+
+const ingredientSchema = {
+  type: "object",
+  properties: {
+    name: { type: "string", description: "食材名（一般的な呼び方。例: 豚こま切れ肉、玉ねぎ）" },
+    amount: { type: "string", description: "この料理で使う量（人数分に換算済み。例: 200g、1/2個、大さじ1）" },
+    stock: { type: "string", enum: STOCKS, description: "残り物で足りるか" },
+    buy_amount: { type: "string", description: "買い足す量。stock が「足りる」なら空文字" },
+    is_seasoning: { type: "boolean", description: "基本調味料・粉類なら true" },
+  },
+  required: ["name", "amount", "stock", "buy_amount", "is_seasoning"],
+  additionalProperties: false,
+};
+
+const dishSchema = {
+  type: "object",
+  properties: {
+    role: { type: "string", enum: ROLES },
+    name: { type: "string", description: "料理名" },
+    summary: { type: "string", description: "どんな料理か・残り物の何を使うかを1文で" },
+    minutes: { type: "integer", description: "調理時間の目安（分）" },
+    ingredients: { type: "array", items: ingredientSchema },
+    steps: { type: "array", items: { type: "string" }, description: "作り方の要約。1手順1文、3〜6手順" },
+    source: {
+      type: "object",
+      properties: {
+        title: { type: "string", description: "参考にしたレシピの名前" },
+        site: { type: "string", description: "参考にしたレシピのサイト名" },
+      },
+      required: ["title", "site"],
+      additionalProperties: false,
+    },
+  },
+  required: ["role", "name", "summary", "minutes", "ingredients", "steps", "source"],
+  additionalProperties: false,
+};
+
+const menuSchema = {
+  type: "object",
+  properties: {
+    days: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          day: { type: "integer", description: "何日目か（1から）" },
+          dishes: { type: "array", items: dishSchema },
+        },
+        required: ["day", "dishes"],
+        additionalProperties: false,
+      },
+    },
+    note: { type: "string", description: "使い切れなかった残り物や注意（なければ空文字）" },
+  },
+  required: ["days", "note"],
+  additionalProperties: false,
+};
+
+// モデル名（ID）を整える。画面の名前（「Gemini 3.8 Flash」）で入れられても gemini-3.8-flash に直す
+function normalizeModel(s) {
+  return str(s).replace(/^models\//i, "").replace(/[\s_]+/g, "-").toLowerCase();
+}
+const currentModel = () => normalizeModel(store.get(KEYS.model, "")) || DEFAULT_MODEL;
+
+/** Gemini を1回呼ぶ。結果のJSONと、Google検索で参考にしたページ・検索候補の表示用HTMLを返す */
+async function callGemini({ prompt, schema, signal }) {
+  const key = store.get(KEYS.apiKey, "");
+  if (!key) throw new AppError("APIキーが設定されていません。右上の ⚙ から設定してください。");
+  const model = currentModel();
+  const body = {
+    systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
+    contents: [{ role: "user", parts: [{ text: prompt }] }],
+    tools: [{ google_search: {} }],
+    generationConfig: { responseMimeType: "application/json", responseJsonSchema: schema },
+  };
+
+  let res;
+  let text;
+  try {
+    res = await fetch(`${GEMINI_BASE}/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
+      method: "POST",
+      // キーはURLではなくヘッダーで送る（履歴などにキーが残らないように）
+      headers: { "Content-Type": "application/json", "x-goog-api-key": key },
+      body: JSON.stringify(body),
+      signal,
+    });
+    text = await res.text();
+  } catch {
+    if (signal.aborted) throw new AppError("中止しました。");
+    throw new AppError("Googleに接続できませんでした。ネットにつながっているか確かめてください。");
+  }
+  if (!res.ok) throw httpError(res.status, text, model, key);
+
+  let j;
+  try {
+    j = JSON.parse(text);
+  } catch {
+    throw new AppError("Googleの応答を読み取れませんでした。もう一度お試しください。");
+  }
+  if (j.promptFeedback?.blockReason) {
+    throw new AppError(`Googleの安全フィルターで処理されませんでした（${j.promptFeedback.blockReason}）。入力を少し変えてお試しください。`);
+  }
+  const cand = j.candidates?.[0];
+  const out = (cand?.content?.parts || [])
+    .filter((p) => typeof p.text === "string" && !p.thought)
+    .map((p) => p.text)
+    .join("");
+  if (cand?.finishReason === "MAX_TOKENS") {
+    throw new AppError("結果が長すぎて途中で切れました。日数や品数を減らして、もう一度お試しください。");
+  }
+  if (!out) {
+    throw new AppError(`Geminiから結果が返ってきませんでした${cand?.finishReason ? `（${cand.finishReason}）` : ""}。もう一度お試しください。`);
+  }
+  const gm = cand.groundingMetadata || {};
+  return {
+    data: parseJson(out),
+    sources: (gm.groundingChunks || []).map((c) => ({ title: str(c.web?.title), uri: safeUrl(c.web?.uri) })).filter((s) => s.uri),
+    searchHtml: str(gm.searchEntryPoint?.renderedContent),
+  };
+}
+
+// 形式の指定どおりでも、まれに ```json で囲まれて返ることがあるので、外して読む
+function parseJson(text) {
+  const t = text.trim().replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/, "");
+  try {
+    return JSON.parse(t);
+  } catch {
+    const a = t.indexOf("{");
+    const b = t.lastIndexOf("}");
+    if (a >= 0 && b > a) {
+      try { return JSON.parse(t.slice(a, b + 1)); } catch { /* 下で失敗にする */ }
+    }
+  }
+  throw new AppError("AIの結果を読み取れませんでした。もう一度お試しください。");
+}
+
+/** Googleが返したエラーを、分かる文章にする。キーがメッセージに混ざっていても伏せる */
+function httpError(status, text, model, key) {
+  let msg = "";
+  try {
+    msg = JSON.parse(text)?.error?.message || "";
+  } catch {
+    msg = String(text || "").slice(0, 300);
+  }
+  msg = msg.split(key).join("***");
+  if (status === 400 && /API key not valid|API_KEY_INVALID/i.test(`${msg} ${text}`)) {
+    return new AppError("APIキーが正しくないようです。右上の ⚙ から貼り直してください。");
+  }
+  if (status === 401 || status === 403) return new AppError("このAPIキーでは使えません（無効、または権限がありません）。⚙ でキーを確かめてください。");
+  if (status === 404) return new AppError(`モデル「${model}」が見つかりません。⚙ でモデル名を確かめてください。`);
+  if (status === 429) {
+    return new AppError("Googleの無料枠の上限（回数または量）に達しました。しばらく待ってから、もう一度お試しください。上限は Google AI Studio で確認できます。");
+  }
+  if (status >= 500) return new AppError("Google側が混み合っているようです。しばらくしてから、もう一度お試しください。");
+  return new AppError(`Geminiがエラーを返しました（${status}）${msg ? `: ${msg}` : ""}`);
+}
+
+// ---- AIの出力の検証（形が崩れていても画面が壊れないようにする） ----
+function str(v) {
+  return typeof v === "string" ? v.trim() : "";
+}
+
+function safeUrl(value) {
+  try {
+    const url = new URL(str(value));
+    return url.protocol === "https:" || url.protocol === "http:" ? url.href : "";
+  } catch {
+    return "";
+  }
+}
+
+function cleanDish(d) {
+  if (!d || typeof d !== "object" || !str(d.name) || !Array.isArray(d.ingredients)) {
+    throw new AppError("AIの結果の形が正しくありませんでした。もう一度お試しください。");
+  }
+  return {
+    role: ROLES.includes(d.role) ? d.role : "主菜",
+    name: str(d.name),
+    summary: str(d.summary),
+    minutes: Number.isFinite(d.minutes) && d.minutes > 0 ? Math.round(d.minutes) : null,
+    ingredients: d.ingredients
+      .filter((i) => i && str(i.name))
+      .map((i) => ({
+        name: str(i.name),
+        amount: str(i.amount),
+        stock: STOCKS.includes(i.stock) ? i.stock : "ない",
+        buy_amount: str(i.buy_amount),
+        is_seasoning: i.is_seasoning === true,
+      })),
+    steps: Array.isArray(d.steps) ? d.steps.map(str).filter(Boolean) : [],
+    source: { title: str(d.source?.title), site: str(d.source?.site) },
+  };
+}
+
+function cleanMenu(m) {
+  if (!m || !Array.isArray(m.days) || m.days.length === 0) {
+    throw new AppError("AIの結果の形が正しくありませんでした。もう一度お試しください。");
+  }
+  const days = m.days.map((day, idx) => ({
+    day: Number.isInteger(day?.day) ? day.day : idx + 1,
+    dishes: (Array.isArray(day?.dishes) ? day.dishes : []).map(cleanDish),
+  }));
+  if (days.every((d) => d.dishes.length === 0)) throw new AppError("献立が1品も返ってきませんでした。もう一度お試しください。");
+  return { days, note: str(m.note) };
+}
+
+function cleanSources(list) {
+  const seen = new Set();
+  return (Array.isArray(list) ? list : [])
+    .map((s) => ({ title: str(s?.title), uri: safeUrl(s?.uri) }))
+    .filter((s) => s.uri && !seen.has(s.uri) && seen.add(s.uri));
+}
+
+// ---- プロンプト ----
+function conditionsText(input) {
+  return [
+    `- 人数: ${input.people}人分`,
+    `- 日数: ${input.days}日分（1日＝夕食1回）`,
+    `- 1日の品数: ${input.style}`,
+    `- 要望: ${input.request || "特になし"}`,
+  ].join("\n");
+}
+
+function menuPrompt(input) {
+  return `残り物:\n${input.leftovers}\n\n条件:\n${conditionsText(input)}\n\n献立を考えて、指定のJSONで返してください。`;
+}
+
+function replacePrompt(result, di, i) {
+  const target = result.days[di].dishes[i];
+  const dayLabel = result.days.length > 1 ? `${result.days[di].day}日目の` : "";
+  const current = result.days
+    .map((day) => {
+      const lines = day.dishes.map((d) => {
+        const ings = d.ingredients.map((g) => `${g.name} ${g.amount}`).join("、");
+        return `  - ${d.role}: ${d.name}（材料: ${ings}）`;
+      });
+      return `${day.day}日目:\n${lines.join("\n")}`;
+    })
+    .join("\n");
+  return `次の献立のうち、${dayLabel}「${target.name}」（${target.role}）を、別の料理に差し替えてください。
+- 同じ役割（${target.role}）の料理にする
+- 献立のほかの料理と、料理名・調理法がかぶらないようにする
+- 残り物で足りるかは、ほかの料理で使う分を差し引いて判断する
+- 差し替え後の1品だけを、指定のJSONで返す
+
+残り物:
+${result.input.leftovers}
+
+条件:
+${conditionsText(result.input)}
+
+いまの献立:
+${current}`;
+}
+
+// ---- 実行 ----
+function startBusy(kind, extra = {}) {
+  const controller = new AbortController();
+  state.busy = { kind, started: Date.now(), controller, ...extra };
+  state.error = null;
+  return controller;
+}
+
+async function generateMenu() {
+  if (state.busy) return;
+  const input = readInput();
+  if (!input.leftovers) {
+    $("#leftovers").focus();
+    toast("残り物を入力してください");
+    return;
+  }
+  if (!store.get(KEYS.apiKey, "")) {
+    openSettings();
+    return;
+  }
+  store.set(KEYS.input, input);
+  const controller = startBusy("menu");
+  showTab("menu");
+  try {
+    const { data, sources, searchHtml } = await callGemini({ prompt: menuPrompt(input), schema: menuSchema, signal: controller.signal });
+    state.result = { input, ...cleanMenu(data), sources: cleanSources(sources), searchHtml, createdAt: Date.now() };
+    state.overrides = {};
+    store.set(KEYS.result, state.result);
+    store.set(KEYS.overrides, state.overrides);
+  } catch (e) {
+    state.error = { tab: "menu", message: errorMessage(e) };
+  } finally {
+    state.busy = null;
+    renderAll();
+  }
+}
+
+async function replaceDish(di, i) {
+  if (state.busy || !state.result) return;
+  if (!store.get(KEYS.apiKey, "")) {
+    openSettings();
+    return;
+  }
+  const controller = startBusy("replace", { di, i });
+  renderMenu();
+  try {
+    const { data, sources, searchHtml } = await callGemini({ prompt: replacePrompt(state.result, di, i), schema: dishSchema, signal: controller.signal });
+    const r = state.result;
+    r.days[di].dishes[i] = cleanDish(data);
+    r.sources = cleanSources([...r.sources, ...sources]);
+    if (searchHtml) r.searchHtml = searchHtml;
+    store.set(KEYS.result, r);
+    toast("差し替えました");
+  } catch (e) {
+    state.error = { tab: "menu", message: errorMessage(e) };
+  } finally {
+    state.busy = null;
+    renderAll();
+  }
+}
+
+function errorMessage(e) {
+  if (e instanceof AppError) return e.message;
+  console.error(e);
+  return `思わぬエラーが起きました: ${e?.message || e}`;
+}
+
+// =====================================================================
+// 献立画面
+// =====================================================================
+function renderBusy() {
+  const b = state.busy;
+  const label = b.kind === "menu" ? "献立を考えています" : "差し替えを考えています";
+  const seconds = Math.floor((Date.now() - b.started) / 1000);
+  return el(
+    "div",
+    { class: "busy" },
+    el("div", { class: "busy-head" }, el("span", { class: "spinner" }), `${label}…`, el("span", { class: "mins", id: "elapsed" }, `${seconds}秒`)),
+    el("p", { class: "hint" }, "Google検索でレシピを確かめています。"),
+    el("button", { type: "button", class: "secondary", onclick: () => b.controller.abort() }, "中止"),
+  );
+}
+
+function stockTag(ing) {
+  if (ing.stock === "足りる") return el("span", { class: "tag have" }, "手元");
+  if (ing.stock === "一部ある") return el("span", { class: "tag part" }, ing.buy_amount ? `あと${ing.buy_amount}` : "少し足りない");
+  if (ing.is_seasoning) return el("span", { class: "tag seasoning" }, "調味料");
+  return el("span", { class: "tag buy" }, "買う");
+}
+
+// 料理ごとの参考リンクは「レシピ名＋サイト名」のGoogle検索にする
+// （Geminiはページの直接のURLを返さないため。AIにURLを書かせると、実在しないURLになることがある）
+function recipeSearchUrl(dish) {
+  const q = [dish.source.title || dish.name, dish.source.site, "レシピ"].filter(Boolean).join(" ");
+  return `https://www.google.com/search?q=${encodeURIComponent(q)}`;
+}
+function recipeLabel(dish) {
+  const title = dish.source.title || dish.name;
+  return dish.source.site ? `${title}（${dish.source.site}）` : title;
+}
+
+function renderDish(dish, di, i) {
+  const b = state.busy;
+  const replacing = b?.kind === "replace" && b.di === di && b.i === i;
+  return el(
+    "article",
+    { class: `dish${replacing ? " replacing" : ""}` },
+    el(
+      "div",
+      { class: "dish-head" },
+      el("span", { class: "role" }, dish.role),
+      el("h3", {}, dish.name),
+      dish.minutes ? el("span", { class: "mins" }, `約${dish.minutes}分`) : null,
+    ),
+    dish.summary ? el("p", { class: "summary" }, dish.summary) : null,
+    el(
+      "ul",
+      { class: "ings" },
+      dish.ingredients.map((ing) =>
+        el("li", { class: "ing" }, el("span", { class: "ing-name" }, ing.name), el("span", { class: "ing-amt" }, ing.amount), stockTag(ing)),
+      ),
+    ),
+    dish.steps.length
+      ? el("details", {}, el("summary", {}, `作り方（${dish.steps.length}手順）`), el("ol", {}, dish.steps.map((s) => el("li", {}, s))))
+      : null,
+    el(
+      "div",
+      { class: "dish-foot" },
+      el("a", { class: "source", href: recipeSearchUrl(dish), target: "_blank", rel: "noopener noreferrer" }, `参考: ${recipeLabel(dish)} を検索 ↗`),
+      el("button", { type: "button", class: "small-btn", disabled: Boolean(b), onclick: () => replaceDish(di, i) }, replacing ? "差し替え中…" : "差し替え"),
+    ),
+  );
+}
+
+// Google検索を使ったときに表示が必要な「検索候補」。Googleが返したHTMLなので、スクリプトを動かせない枠の中に出す
+function searchSuggestions(html) {
+  const frame = el("iframe", { class: "suggest", sandbox: "allow-popups allow-popups-to-escape-sandbox", title: "Google検索の候補" });
+  frame.srcdoc = `<!doctype html><meta charset="utf-8"><base target="_blank">${html}`;
+  return frame;
+}
+
+function renderGrounding(r) {
+  if (!r.sources.length && !r.searchHtml) return null;
+  return el(
+    "section",
+    { class: "grounding" },
+    r.sources.length
+      ? el(
+          "details",
+          {},
+          el("summary", {}, `AIが参考にしたページ（${r.sources.length}件）`),
+          el("ul", {}, r.sources.map((s) => el("li", {}, el("a", { href: s.uri, target: "_blank", rel: "noopener noreferrer" }, s.title || "ページを開く")))),
+        )
+      : null,
+    r.searchHtml ? searchSuggestions(r.searchHtml) : null,
+  );
+}
+
+function renderMenu() {
+  const root = $("#tab-menu");
+  root.replaceChildren();
+  const r = state.result;
+  if (state.busy) root.append(renderBusy());
+  if (state.error?.tab === "menu") root.append(el("div", { class: "error" }, state.error.message));
+  if (state.busy?.kind === "menu") return;
+  if (!r) {
+    root.append(el("p", { class: "empty" }, "まだ献立がありません。「1. 残り物」から作ってください。"));
+    return;
+  }
+  root.append(el("p", { class: "meta" }, `${r.input.people}人分・${r.input.days}日分・${r.input.style}　${formatTime(r.createdAt)} 作成`));
+  if (r.note) root.append(el("p", { class: "note" }, r.note));
+  r.days.forEach((day, di) => {
+    root.append(
+      el(
+        "section",
+        { class: "day" },
+        el("h2", {}, r.days.length > 1 ? `${day.day}日目` : "今日の献立"),
+        day.dishes.map((dish, i) => renderDish(dish, di, i)),
+      ),
+    );
+  });
+  const grounding = renderGrounding(r);
+  if (grounding) root.append(grounding);
+  root.append(el("button", { type: "button", class: "primary", onclick: () => showTab("shop") }, "買い物リストへ"));
+}
+
+function formatTime(ms) {
+  const d = new Date(ms);
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${d.getMonth() + 1}/${d.getDate()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+// =====================================================================
+// 差分計算・買い物リスト
+// =====================================================================
+
+// 表記ゆれ（全角半角・カタカナ/ひらがな・括弧書き・空白）をそろえて、同じ食材をまとめるためのキー
+function itemKey(name) {
+  return name
+    .normalize("NFKC")
+    .replace(/\(.*?\)|（.*?）/g, "")
+    .replace(/[ァ-ヶ]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0x60))
+    .replace(/\s+/g, "")
+    .toLowerCase();
+}
+
+const UNIT_RE = /^約?(\d+(?:\.\d+)?)(?:\/(\d+))?\s*(g|kg|ml|l|cc|個|本|枚|パック|袋|玉|束|株|丁|切れ|缶|房|片|かけ|尾|杯)$/i;
+
+function parseAmount(text) {
+  const m = text.normalize("NFKC").replace(/⁄/g, "/").replace(/\s+/g, "").match(UNIT_RE);
+  if (!m) return null;
+  const value = m[2] ? Number(m[1]) / Number(m[2]) : Number(m[1]);
+  return { value, unit: m[3].toLowerCase() };
+}
+
+// 同じ単位の量は足し算する（300g＋200g → 500g）。単位が違うものは「＋」でつなぐ
+function totalAmount(amounts) {
+  const list = amounts.filter(Boolean);
+  if (list.length <= 1) return list[0] || "";
+  const parsed = list.map(parseAmount);
+  if (parsed.every((p) => p && p.unit === parsed[0].unit)) {
+    const sum = parsed.reduce((s, p) => s + p.value, 0);
+    return `${Math.round(sum * 100) / 100}${parsed[0].unit}`;
+  }
+  return list.join("＋");
+}
+
+function shoppingItems() {
+  const r = state.result;
+  if (!r) return [];
+  const map = new Map();
+  for (const day of r.days) {
+    for (const dish of day.dishes) {
+      for (const ing of dish.ingredients) {
+        if (ing.stock === "足りる") continue;
+        const key = itemKey(ing.name);
+        let item = map.get(key);
+        if (!item) {
+          item = { key, name: ing.name, amounts: [], dishes: [], seasoning: ing.is_seasoning };
+          map.set(key, item);
+        }
+        item.amounts.push(ing.buy_amount || ing.amount);
+        if (!item.dishes.includes(dish.name)) item.dishes.push(dish.name);
+      }
+    }
+  }
+  return [...map.values()]
+    .map((item) => ({ ...item, total: totalAmount(item.amounts), included: isIncluded(item) }))
+    .sort((a, b) => Number(a.seasoning) - Number(b.seasoning));
+}
+
+function isIncluded(item) {
+  const o = state.overrides[item.key];
+  if (o) return o === "include";
+  return !(item.seasoning && state.result.input.assumeSeasoning);
+}
+
+function shareText(items) {
+  const r = state.result;
+  const lines = [`【買い物リスト】${r.input.people}人分・${r.input.days}日分`];
+  const buy = items.filter((i) => i.included);
+  if (buy.length) buy.forEach((i) => lines.push(`・${i.name}${i.total ? ` ${i.total}` : ""}`));
+  else lines.push("買うものはありません");
+  lines.push("", "【作るもの】");
+  for (const day of r.days) {
+    const names = day.dishes.map((d) => d.name).join("、");
+    lines.push(r.days.length > 1 ? `${day.day}日目：${names}` : `・${names}`);
+  }
+  return lines.join("\n");
+}
+
+function renderShop() {
+  const root = $("#tab-shop");
+  root.replaceChildren();
+  if (!state.result) {
+    root.append(el("p", { class: "empty" }, "まだ献立がありません。「1. 残り物」から作ってください。"));
+    return;
+  }
+  const items = shoppingItems();
+  if (items.length === 0) {
+    root.append(el("p", { class: "note" }, "買い足すものはありません。残り物だけで作れます。"));
+  } else {
+    root.append(el("p", { class: "meta" }, "チェックを外すと、共有用テキストから外れます（家にあるときなど）。"));
+    root.append(
+      el(
+        "ul",
+        { class: "shop-list" },
+        items.map((item) =>
+          el(
+            "li",
+            { class: item.included ? "" : "off" },
+            el(
+              "label",
+              {},
+              el("input", {
+                type: "checkbox",
+                checked: item.included,
+                onchange: (ev) => {
+                  state.overrides[item.key] = ev.target.checked ? "include" : "exclude";
+                  store.set(KEYS.overrides, state.overrides);
+                  renderShop();
+                },
+              }),
+              el(
+                "span",
+                { class: "shop-main" },
+                el("span", { class: "shop-name" }, item.name),
+                item.total ? el("span", { class: "shop-amt" }, item.total) : null,
+                el("span", { class: "shop-sub" }, `${item.seasoning ? "調味料・" : ""}${item.dishes.join("、")}`),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  root.append(el("h2", { class: "section-title" }, "共有用テキスト"));
+  const text = shareText(items);
+  const area = el("textarea", { id: "shareText", readonly: true, rows: String(Math.min(18, text.split("\n").length + 1)) });
+  area.value = text;
+  root.append(area);
+  const buttons = el("div", { class: "btn-row" }, el("button", { type: "button", class: "primary", onclick: () => copyText(text, area) }, "コピー"));
+  if (navigator.share) {
+    buttons.append(el("button", { type: "button", class: "secondary", onclick: () => navigator.share({ text }).catch(() => {}) }, "LINEなどに送る"));
+  } else {
+    buttons.style.gridTemplateColumns = "1fr";
+  }
+  root.append(buttons);
+}
+
+async function copyText(text, area) {
+  try {
+    await navigator.clipboard.writeText(text);
+    toast("コピーしました");
+  } catch {
+    // http で開いたときなど、クリップボードAPIが使えない環境向け
+    area.select();
+    const ok = document.execCommand?.("copy");
+    toast(ok ? "コピーしました" : "テキストを長押ししてコピーしてください");
+  }
+}
+
+// =====================================================================
+// 画面切り替え・設定・共通
+// =====================================================================
+function showTab(name) {
+  state.tab = name;
+  for (const btn of document.querySelectorAll(".steps button")) btn.classList.toggle("active", btn.dataset.tab === name);
+  for (const tab of ["input", "menu", "shop"]) $(`#tab-${tab}`).hidden = tab !== name;
+  renderAll();
+  window.scrollTo({ top: 0 });
+}
+
+function renderAll() {
+  $("#generate").disabled = Boolean(state.busy);
+  $("#generate").textContent = state.busy?.kind === "menu" ? "考えています…" : "献立を考える";
+  if (state.tab === "menu") renderMenu();
+  if (state.tab === "shop") renderShop();
+}
+
+for (const btn of document.querySelectorAll(".steps button")) btn.addEventListener("click", () => showTab(btn.dataset.tab));
+$("#generate").addEventListener("click", generateMenu);
+
+// 経過秒数だけを毎秒更新する
+setInterval(() => {
+  const span = document.getElementById("elapsed");
+  if (span && state.busy) span.textContent = `${Math.floor((Date.now() - state.busy.started) / 1000)}秒`;
+}, 1000);
+
+function maskKey(key) {
+  return key.length > 14 ? `${key.slice(0, 6)}…${key.slice(-4)}` : "（保存済み）";
+}
+function refreshKeyStatus() {
+  const key = store.get(KEYS.apiKey, "");
+  $("#keyStatus").textContent = key ? `保存済み: ${maskKey(key)}` : "まだ保存されていません。";
+}
+function openSettings() {
+  $("#apiKey").value = "";
+  $("#model").value = currentModel();
+  refreshKeyStatus();
+  $("#settings").showModal();
+}
+$("#openSettings").addEventListener("click", openSettings);
+$("#saveKey").addEventListener("click", () => {
+  const key = $("#apiKey").value.trim();
+  if (key) store.set(KEYS.apiKey, key);
+  const model = normalizeModel($("#model").value);
+  if (model && model !== DEFAULT_MODEL) store.set(KEYS.model, model);
+  else store.remove(KEYS.model);
+  $("#apiKey").value = "";
+  $("#model").value = currentModel();
+  refreshKeyStatus();
+  toast(store.get(KEYS.apiKey, "") ? "保存しました" : "キーを入力してください");
+});
+$("#clearKey").addEventListener("click", () => {
+  store.remove(KEYS.apiKey);
+  refreshKeyStatus();
+  toast("キーを消しました");
+});
+
+let toastTimer;
+function toast(message) {
+  const t = $("#toast");
+  t.textContent = message;
+  t.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove("show"), 1800);
+}
+
+// 前回の結果も、AIの出力と同じ検証を通してから使う（壊れていたら捨てる）
+function loadResult() {
+  const saved = store.get(KEYS.result, null);
+  if (!saved?.input) return null;
+  try {
+    return {
+      input: saved.input,
+      ...cleanMenu(saved),
+      sources: cleanSources(saved.sources),
+      searchHtml: str(saved.searchHtml),
+      createdAt: saved.createdAt,
+    };
+  } catch {
+    return null;
+  }
+}
+
+state.result = loadResult();
+restoreInput();
+renderAll();
+</script>
+</body>
+</html>

@@ -1,0 +1,13 @@
+{
+  "name": "残り物献立",
+  "short_name": "献立",
+  "description": "冷蔵庫の残り物から献立と買い物リストを作る個人用アプリ",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#faf7f2",
+  "theme_color": "#c8553d",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}
