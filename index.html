@@ -126,7 +126,7 @@
   .meta { margin: 0 0 12px; }
   .empty { color: var(--muted); text-align: center; padding: 40px 0; }
   .note { background: var(--chip); border-radius: 10px; padding: 10px 12px; font-size: .9rem; margin: 0 0 14px; }
-  .error { background: var(--error-bg); color: var(--buy); border-radius: 10px; padding: 10px 12px; margin: 0 0 14px; font-size: .92rem; }
+  .error { background: var(--error-bg); color: var(--buy); border-radius: 10px; padding: 10px 12px; margin: 0 0 14px; font-size: .92rem; white-space: pre-line; overflow-wrap: anywhere; }
 
   .busy {
     background: var(--surface); border: 1px solid var(--border); border-radius: 14px;
@@ -173,10 +173,6 @@
     background: var(--surface); cursor: pointer; font-size: .85rem; white-space: nowrap;
   }
   .small-btn:disabled { opacity: .5; cursor: default; }
-  .grounding { margin: 0 0 18px; }
-  .grounding li { margin: 2px 0; }
-  .grounding a { color: var(--accent); word-break: break-all; }
-  .suggest { display: block; width: 100%; height: 72px; border: 0; margin: 8px 0 0; background: transparent; }
 
   .shop-list { list-style: none; margin: 0 0 16px; padding: 0; background: var(--surface); border: 1px solid var(--border); border-radius: 14px; overflow: hidden; }
   .shop-list li + li { border-top: 1px solid var(--border); }
@@ -264,7 +260,7 @@
       <span>基本調味料（塩・しょうゆ・みそ・油など）は家にある前提で、買い物リストから外す</span>
     </label>
     <button id="generate" class="primary" type="button">献立を考える</button>
-    <p class="hint">Google検索でレシピを確かめながら考えるので、少し時間がかかります。</p>
+    <p class="hint">考えるのに、少し時間がかかります。</p>
   </section>
 
   <section id="tab-menu" class="panel" hidden></section>
@@ -298,7 +294,7 @@
 <script type="module">
 // ---- AIの設定（変えるときはここだけ） ----
 const GEMINI_BASE = "https://generativelanguage.googleapis.com";
-// Google検索と「決まったJSONの形で返す」を同時に使えるモデル。設定画面で変えられる
+// 無料枠で使えるモデル（1日20回まで）。上限に当たるなら、設定画面で gemini-3.5-flash-lite（1日500回）に変えられる
 const DEFAULT_MODEL = "gemini-3.8-flash";
 
 const ROLES = ["主菜", "副菜", "汁物", "主食"];
@@ -330,7 +326,7 @@ const store = {
 };
 
 const state = {
-  result: null, // { input, days: [{ day, dishes }], note, sources, searchHtml, createdAt }。起動時に loadResult() で入れる
+  result: null, // { input, days: [{ day, dishes }], note, createdAt }。起動時に loadResult() で入れる
   overrides: store.get(KEYS.overrides, {}), // 買い物リストで手で付け外ししたもの { 食材キー: "include" | "exclude" }
   busy: null, // { kind: "menu" | "replace", di, i, started, controller }
   error: null, // { tab, message }
@@ -393,14 +389,13 @@ const SYSTEM_PROMPT = `あなたは日本の家庭料理にくわしい献立ア
 
 進め方:
 1. 残り物と条件から、献立（料理の組み合わせ）を考える。複数日のときは、傷みやすい食材を早い日に使い、同じ味付け・調理法が続かないようにする。
-2. 各料理について Google 検索で実在するレシピを探し、材料の分量と作り方を確かめる。日本語の家庭料理レシピサイトを優先する。
+2. 料理は、日本の家庭でよく作られる定番の料理にする。材料の分量と作り方は、一般的なレシピの標準的な分量にする。
 3. 分量は、指定された人数分に換算する。
 4. 材料ごとに、残り物で足りるかを判断する。献立全体で同じ食材を使うときは、合計で足りるかを考える。
 5. 結果は、指定されたJSONの形だけで返す。JSON以外の文章は書かない。
 
 守ること:
-- steps（作り方）は、確かめたレシピを参考に、自分の言葉で短くまとめる。1手順1文、3〜6手順。レシピの本文をそのまま写さない。
-- source は、参考にしたレシピの title（レシピ名）と site（サイト名。例: クラシル、白ごはん.com）。URLは書かない。見つからなければ両方とも空文字にする。
+- steps（作り方）は、自分の言葉で短くまとめる。1手順1文、3〜6手順。
 - stock: 残り物に同じ食材（言い換え・表記ゆれを含む）があり量も足りるなら「足りる」、あるが足りないなら「一部ある」、なければ「ない」。残り物に量が書かれていなければ、足りるものとして扱う。
 - buy_amount: 買い足す量。「一部ある」なら不足分、「ない」なら必要な量。「足りる」なら空文字。
 - is_seasoning: 塩・砂糖・しょうゆ・みそ・酒・みりん・酢・油・こしょう・だしの素・コンソメ・片栗粉・小麦粉などの基本調味料・粉類なら true。
@@ -429,17 +424,8 @@ const dishSchema = {
     minutes: { type: "integer", description: "調理時間の目安（分）" },
     ingredients: { type: "array", items: ingredientSchema },
     steps: { type: "array", items: { type: "string" }, description: "作り方の要約。1手順1文、3〜6手順" },
-    source: {
-      type: "object",
-      properties: {
-        title: { type: "string", description: "参考にしたレシピの名前" },
-        site: { type: "string", description: "参考にしたレシピのサイト名" },
-      },
-      required: ["title", "site"],
-      additionalProperties: false,
-    },
   },
-  required: ["role", "name", "summary", "minutes", "ingredients", "steps", "source"],
+  required: ["role", "name", "summary", "minutes", "ingredients", "steps"],
   additionalProperties: false,
 };
 
@@ -470,7 +456,10 @@ function normalizeModel(s) {
 }
 const currentModel = () => normalizeModel(store.get(KEYS.model, "")) || DEFAULT_MODEL;
 
-/** Gemini を1回呼ぶ。結果のJSONと、Google検索で参考にしたページ・検索候補の表示用HTMLを返す */
+/**
+ * Gemini を1回呼び、決まったJSONの形で結果を受け取る。
+ * Google 検索は使わない（無料枠では Gemini 3 系で検索が使えないため。AIが知っている定番の分量で考える）
+ */
 async function callGemini({ prompt, schema, signal }) {
   const key = store.get(KEYS.apiKey, "");
   if (!key) throw new AppError("APIキーが設定されていません。右上の ⚙ から設定してください。");
@@ -478,7 +467,6 @@ async function callGemini({ prompt, schema, signal }) {
   const body = {
     systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
     contents: [{ role: "user", parts: [{ text: prompt }] }],
-    tools: [{ google_search: {} }],
     generationConfig: { responseMimeType: "application/json", responseJsonSchema: schema },
   };
 
@@ -519,12 +507,7 @@ async function callGemini({ prompt, schema, signal }) {
   if (!out) {
     throw new AppError(`Geminiから結果が返ってきませんでした${cand?.finishReason ? `（${cand.finishReason}）` : ""}。もう一度お試しください。`);
   }
-  const gm = cand.groundingMetadata || {};
-  return {
-    data: parseJson(out),
-    sources: (gm.groundingChunks || []).map((c) => ({ title: str(c.web?.title), uri: safeUrl(c.web?.uri) })).filter((s) => s.uri),
-    searchHtml: str(gm.searchEntryPoint?.renderedContent),
-  };
+  return parseJson(out);
 }
 
 // 形式の指定どおりでも、まれに ```json で囲まれて返ることがあるので、外して読む
@@ -557,7 +540,9 @@ function httpError(status, text, model, key) {
   if (status === 401 || status === 403) return new AppError("このAPIキーでは使えません（無効、または権限がありません）。⚙ でキーを確かめてください。");
   if (status === 404) return new AppError(`モデル「${model}」が見つかりません。⚙ でモデル名を確かめてください。`);
   if (status === 429) {
-    return new AppError("Googleの無料枠の上限（回数または量）に達しました。しばらく待ってから、もう一度お試しください。上限は Google AI Studio で確認できます。");
+    return new AppError(
+      `Googleの無料枠の上限（回数または量）に達しました。しばらく待ってから、もう一度お試しください。上限は Google AI Studio で確認できます。${msg ? `\n（Googleからの説明: ${msg}）` : ""}`,
+    );
   }
   if (status >= 500) return new AppError("Google側が混み合っているようです。しばらくしてから、もう一度お試しください。");
   return new AppError(`Geminiがエラーを返しました（${status}）${msg ? `: ${msg}` : ""}`);
@@ -566,15 +551,6 @@ function httpError(status, text, model, key) {
 // ---- AIの出力の検証（形が崩れていても画面が壊れないようにする） ----
 function str(v) {
   return typeof v === "string" ? v.trim() : "";
-}
-
-function safeUrl(value) {
-  try {
-    const url = new URL(str(value));
-    return url.protocol === "https:" || url.protocol === "http:" ? url.href : "";
-  } catch {
-    return "";
-  }
 }
 
 function cleanDish(d) {
@@ -596,7 +572,6 @@ function cleanDish(d) {
         is_seasoning: i.is_seasoning === true,
       })),
     steps: Array.isArray(d.steps) ? d.steps.map(str).filter(Boolean) : [],
-    source: { title: str(d.source?.title), site: str(d.source?.site) },
   };
 }
 
@@ -610,13 +585,6 @@ function cleanMenu(m) {
   }));
   if (days.every((d) => d.dishes.length === 0)) throw new AppError("献立が1品も返ってきませんでした。もう一度お試しください。");
   return { days, note: str(m.note) };
-}
-
-function cleanSources(list) {
-  const seen = new Set();
-  return (Array.isArray(list) ? list : [])
-    .map((s) => ({ title: str(s?.title), uri: safeUrl(s?.uri) }))
-    .filter((s) => s.uri && !seen.has(s.uri) && seen.add(s.uri));
 }
 
 // ---- プロンプト ----
@@ -685,8 +653,8 @@ async function generateMenu() {
   const controller = startBusy("menu");
   showTab("menu");
   try {
-    const { data, sources, searchHtml } = await callGemini({ prompt: menuPrompt(input), schema: menuSchema, signal: controller.signal });
-    state.result = { input, ...cleanMenu(data), sources: cleanSources(sources), searchHtml, createdAt: Date.now() };
+    const data = await callGemini({ prompt: menuPrompt(input), schema: menuSchema, signal: controller.signal });
+    state.result = { input, ...cleanMenu(data), createdAt: Date.now() };
     state.overrides = {};
     store.set(KEYS.result, state.result);
     store.set(KEYS.overrides, state.overrides);
@@ -707,12 +675,9 @@ async function replaceDish(di, i) {
   const controller = startBusy("replace", { di, i });
   renderMenu();
   try {
-    const { data, sources, searchHtml } = await callGemini({ prompt: replacePrompt(state.result, di, i), schema: dishSchema, signal: controller.signal });
-    const r = state.result;
-    r.days[di].dishes[i] = cleanDish(data);
-    r.sources = cleanSources([...r.sources, ...sources]);
-    if (searchHtml) r.searchHtml = searchHtml;
-    store.set(KEYS.result, r);
+    const data = await callGemini({ prompt: replacePrompt(state.result, di, i), schema: dishSchema, signal: controller.signal });
+    state.result.days[di].dishes[i] = cleanDish(data);
+    store.set(KEYS.result, state.result);
     toast("差し替えました");
   } catch (e) {
     state.error = { tab: "menu", message: errorMessage(e) };
@@ -739,7 +704,7 @@ function renderBusy() {
     "div",
     { class: "busy" },
     el("div", { class: "busy-head" }, el("span", { class: "spinner" }), `${label}…`, el("span", { class: "mins", id: "elapsed" }, `${seconds}秒`)),
-    el("p", { class: "hint" }, "Google検索でレシピを確かめています。"),
+    el("p", { class: "hint" }, "残り物に合う料理と分量を考えています。"),
     el("button", { type: "button", class: "secondary", onclick: () => b.controller.abort() }, "中止"),
   );
 }
@@ -751,15 +716,10 @@ function stockTag(ing) {
   return el("span", { class: "tag buy" }, "買う");
 }
 
-// 料理ごとの参考リンクは「レシピ名＋サイト名」のGoogle検索にする
-// （Geminiはページの直接のURLを返さないため。AIにURLを書かせると、実在しないURLになることがある）
+// くわしい作り方を見たいとき用に、「料理名 レシピ」のGoogle検索へのリンクを出す
+// （AIにレシピページのURLを書かせると、実在しないURLになることがあるため）
 function recipeSearchUrl(dish) {
-  const q = [dish.source.title || dish.name, dish.source.site, "レシピ"].filter(Boolean).join(" ");
-  return `https://www.google.com/search?q=${encodeURIComponent(q)}`;
-}
-function recipeLabel(dish) {
-  const title = dish.source.title || dish.name;
-  return dish.source.site ? `${title}（${dish.source.site}）` : title;
+  return `https://www.google.com/search?q=${encodeURIComponent(`${dish.name} レシピ`)}`;
 }
 
 function renderDish(dish, di, i) {
@@ -789,33 +749,9 @@ function renderDish(dish, di, i) {
     el(
       "div",
       { class: "dish-foot" },
-      el("a", { class: "source", href: recipeSearchUrl(dish), target: "_blank", rel: "noopener noreferrer" }, `参考: ${recipeLabel(dish)} を検索 ↗`),
+      el("a", { class: "source", href: recipeSearchUrl(dish), target: "_blank", rel: "noopener noreferrer" }, `「${dish.name} レシピ」を検索 ↗`),
       el("button", { type: "button", class: "small-btn", disabled: Boolean(b), onclick: () => replaceDish(di, i) }, replacing ? "差し替え中…" : "差し替え"),
     ),
-  );
-}
-
-// Google検索を使ったときに表示が必要な「検索候補」。Googleが返したHTMLなので、スクリプトを動かせない枠の中に出す
-function searchSuggestions(html) {
-  const frame = el("iframe", { class: "suggest", sandbox: "allow-popups allow-popups-to-escape-sandbox", title: "Google検索の候補" });
-  frame.srcdoc = `<!doctype html><meta charset="utf-8"><base target="_blank">${html}`;
-  return frame;
-}
-
-function renderGrounding(r) {
-  if (!r.sources.length && !r.searchHtml) return null;
-  return el(
-    "section",
-    { class: "grounding" },
-    r.sources.length
-      ? el(
-          "details",
-          {},
-          el("summary", {}, `AIが参考にしたページ（${r.sources.length}件）`),
-          el("ul", {}, r.sources.map((s) => el("li", {}, el("a", { href: s.uri, target: "_blank", rel: "noopener noreferrer" }, s.title || "ページを開く")))),
-        )
-      : null,
-    r.searchHtml ? searchSuggestions(r.searchHtml) : null,
   );
 }
 
@@ -842,8 +778,6 @@ function renderMenu() {
       ),
     );
   });
-  const grounding = renderGrounding(r);
-  if (grounding) root.append(grounding);
   root.append(el("button", { type: "button", class: "primary", onclick: () => showTab("shop") }, "買い物リストへ"));
 }
 
@@ -1079,8 +1013,6 @@ function loadResult() {
     return {
       input: saved.input,
       ...cleanMenu(saved),
-      sources: cleanSources(saved.sources),
-      searchHtml: str(saved.searchHtml),
       createdAt: saved.createdAt,
     };
   } catch {
